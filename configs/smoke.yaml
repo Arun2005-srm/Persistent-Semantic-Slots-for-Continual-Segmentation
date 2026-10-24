@@ -1,0 +1,36 @@
+extends: base.yaml
+output_dir: runs/smoke_demo
+device: cpu
+dataset:
+  root: runs/smoke_data
+  classes: [background, rectangle, circle]
+  colors: [[30,40,60], [220,80,60], [60,180,100]]
+loader:
+  batch_size: 2
+  pin_memory: false
+transforms:
+  train: [{name: resize, size: [48, 64]}, {name: random_horizontal_flip, p: 0.5}]
+  val: [{name: resize, size: [48, 64]}]
+  test: [{name: resize, size: [48, 64]}]
+model:
+  encoder: {name: tiny, frozen: true}
+  width: 16
+  heads: 4
+  decoder_layers: 1
+  adapter_width: 4
+training:
+  epochs: 2
+  lr: 0.001
+  amp: false
+continual:
+  stages:
+    - {name: base_shapes, classes: [0, 1]}
+    - {name: new_shape, classes: [2]}
+  replay: {enabled: true, budget_bytes: 1048576, batch_size: 2}
+reporting:
+  num_predictions: 3
+  tsne_max_images: 3
+  tsne_points_per_image: 32
+  tsne_max_points: 96
+eda:
+  example_images: 2

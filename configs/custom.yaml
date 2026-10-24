@@ -1,0 +1,8 @@
+extends: base.yaml
+output_dir: runs/custom
+dataset:
+  root: "" # REQUIRED
+  classes: [background, foreground] # Replace with your ordered taxonomy.
+  colors: [[0, 0, 0], [220, 20, 60]]
+  label_map: {} # raw_id: contiguous training_id; unmapped values become ignore.
+  # For arbitrary folder layouts replace splits with manifest: path/to/train.csv etc.

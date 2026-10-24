@@ -1,0 +1,75 @@
+seed: 42
+output_dir: runs/experiment
+device: auto
+dataset:
+  root: "" # REQUIRED: local dataset directory
+  classes: [background, foreground]
+  colors: [[0, 0, 0], [220, 20, 60]]
+  ignore_index: 255
+  label_map: {} # Empty means masks already contain contiguous training indices.
+  rgb_label_map: {} # Optional: "R,G,B": train_index
+  splits:
+    train: {images: "images/train/**/*.png", masks: "masks/train/{relative}", image_base: "images/train"}
+    val: {images: "images/val/**/*.png", masks: "masks/val/{relative}", image_base: "images/val"}
+    test: {images: "images/test/**/*.png", masks: "masks/test/{relative}", image_base: "images/test"}
+  partition: null # Optional seeded group-aware partition of one source split; see README.
+loader:
+  batch_size: 4
+  num_workers: 0
+  pin_memory: true
+transforms:
+  train:
+    - {name: resize, size: [512, 1024]}
+    - {name: random_horizontal_flip, p: 0.5}
+    - {name: normalize, mean: [0.485, 0.456, 0.406], std: [0.229, 0.224, 0.225]}
+  val:
+    - {name: resize, size: [512, 1024]}
+    - {name: normalize, mean: [0.485, 0.456, 0.406], std: [0.229, 0.224, 0.225]}
+  test:
+    - {name: resize, size: [512, 1024]}
+    - {name: normalize, mean: [0.485, 0.456, 0.406], std: [0.229, 0.224, 0.225]}
+model:
+  encoder:
+    name: segformer
+    pretrained: nvidia/mit-b2
+    frozen: true
+  width: 256
+  heads: 8
+  decoder_layers: 2
+  adapter_width: 32
+  modules:
+    adapters: true
+    multiscale_fusion: true
+    descriptor: true
+    identity_memory: true
+    appearance_memory: true
+    query_decoder: true
+  memory: {slots: 4, similarity_threshold: 0.8, temperature: 0.1}
+training:
+  epochs: 50
+  optimizer: adamw
+  lr: 0.0001
+  weight_decay: 0.01
+  momentum: 0.9
+  scheduler: cosine # cosine, polynomial, or none
+  polynomial_power: 0.9
+  min_lr: 0.000001
+  amp: true
+  grad_clip: 1.0
+  loss: {cross_entropy: true, dice: true, dice_weight: 1.0, class_weights: null}
+continual:
+  stages: [] # Empty = ordinary single-stage training; no CL protocol is assumed.
+  replay: {enabled: false, budget_bytes: 67108864, batch_size: 2}
+metrics:
+  boundary_ratio: 0.02
+reporting:
+  num_predictions: 8
+  export_masks: true # During test: all predictions, original resolution, training IDs.
+  tsne: true
+  tsne_max_points: 2000
+  tsne_points_per_image: 128
+  tsne_max_images: 32
+eda:
+  before_training: true
+  max_images: null # null = complete dataset, not a sampled estimate
+  example_images: 6
