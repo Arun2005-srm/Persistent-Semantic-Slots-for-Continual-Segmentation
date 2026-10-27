@@ -1,6 +1,6 @@
 """Dataset-level confusion metrics; undefined class scores are NaN, never perfect."""
 import numpy as np
-from scipy.ndimage import binary_erosion
+from scipy.ndimage import minimum_filter
 import torch
 import torch.nn.functional as F
 
@@ -12,6 +12,12 @@ def divide(a, b):
 def mean_defined(a):
     a = np.asarray(a)
     return float(np.nanmean(a)) if np.isfinite(a).any() else float("nan")
+
+
+def square_erosion(mask, radius, border_value):
+    # Repeated 3x3 square erosion equals a single (2r+1) square minimum.
+    # SciPy applies the rectangular minimum as separable 1D filters.
+    return minimum_filter(mask, size=2 * radius + 1, mode="constant", cval=border_value)
 
 
 class SegMetrics:
@@ -33,11 +39,11 @@ class SegMetrics:
             self.cm += np.bincount(self.c * truth[valid] + pred[valid], minlength=self.c ** 2).reshape(self.c, self.c)
             radius = max(1, round(self.ratio * np.hypot(*truth.shape)))
             # Remove an ignore-neighbourhood so artificial void borders are not scored.
-            safe = binary_erosion(valid, structure=np.ones((3, 3)), iterations=radius, border_value=1)
+            safe = square_erosion(valid, radius, 1)
             for c in self.indices:
                 gt, pr = (truth == c) & valid, (pred == c) & valid
-                gb = gt & ~binary_erosion(gt, structure=np.ones((3, 3)), iterations=radius, border_value=0) & safe
-                pb = pr & ~binary_erosion(pr, structure=np.ones((3, 3)), iterations=radius, border_value=0) & safe
+                gb = gt & ~square_erosion(gt, radius, 0) & safe
+                pb = pr & ~square_erosion(pr, radius, 0) & safe
                 self.bi[c] += (gb & pb).sum()
                 self.bu[c] += (gb | pb).sum()
 

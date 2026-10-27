@@ -37,6 +37,7 @@ def loader_for(dataset, cfg, shuffle=False, epoch_seed=None):
     generator = torch.Generator().manual_seed(cfg["seed"] if epoch_seed is None else epoch_seed)
     return DataLoader(dataset, batch_size=cfg["loader"]["batch_size"], shuffle=shuffle,
                       num_workers=cfg["loader"]["num_workers"], pin_memory=cfg["loader"]["pin_memory"],
+                      multiprocessing_context="spawn" if cfg["loader"]["num_workers"] else None,
                       worker_init_fn=seed_worker, generator=generator,
                       collate_fn=partial(collate, ignore=cfg["dataset"]["ignore_index"]))
 
