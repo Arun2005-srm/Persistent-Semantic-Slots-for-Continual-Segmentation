@@ -70,7 +70,9 @@ def evaluate(model, dataset, cfg, device):
     c, ignore = len(cfg["dataset"]["classes"]), cfg["dataset"]["ignore_index"]
     metrics = SegMetrics(c, ignore, cfg["metrics"]["boundary_ratio"], dataset.classes)
     weighted_loss, count = 0., 0
-    for batch in loader_for(dataset, cfg):
+    loader = loader_for(dataset, cfg)
+    print(f"Validation: {len(loader)} batches; waiting for first batch", flush=True)
+    for batch_index, batch in enumerate(loader, 1):
         x, y = batch["image"].to(device), batch["mask"].to(device)
         logits = model(x)
         loss_target = y
@@ -83,6 +85,8 @@ def evaluate(model, dataset, cfg, device):
             weighted_loss += float(loss) * n
             count += n
         update_metrics(metrics, logits, y, batch["sizes"])
+        if batch_index == 1 or batch_index % 50 == 0 or batch_index == len(loader):
+            print(f"Validation batch {batch_index}/{len(loader)}", flush=True)
     result = metrics.compute()
     result["loss"] = weighted_loss / count if count else float("nan")
     result["labelled_pixels"] = count
@@ -194,17 +198,25 @@ def train(cfg, splits, resume=None):
             model.train()
             metrics = SegMetrics(len(classes), ignore, cfg["metrics"]["boundary_ratio"])
             weighted_loss, count, steps = 0., 0, 0
-            for batch in loader_for(train_set, cfg, shuffle=True, epoch_seed=cfg["seed"] + stage_index * 100000 + epoch):
+            loader = loader_for(train_set, cfg, shuffle=True, epoch_seed=cfg["seed"] + stage_index * 100000 + epoch)
+            print(f"[{stage['name']}] epoch {epoch + 1}/{epochs}: {len(loader)} batches, device={device}, workers={cfg['loader']['num_workers']}; waiting for first batch", flush=True)
+            for batch_index, batch in enumerate(loader, 1):
+                if batch_index == 1:
+                    print("First batch loaded; transferring to device", flush=True)
                 x, y = batch["image"].to(device), batch["mask"].to(device)
                 replay_samples = replay.sample(replay_cfg["batch_size"]) if replay_cfg["enabled"] else []
                 optimizer.zero_grad(set_to_none=True)
                 terms, weights = [], []
                 with torch.autocast(device_type=device.type, enabled=scaler.is_enabled()):
                     if (y != ignore).any():
+                        if batch_index == 1:
+                            print("First batch: forward and loss", flush=True)
                         logits = model(x, labels=y, update_memory=True)
                         loss = segmentation_loss(logits, y, cfg, ignore)
                         terms.append(loss)
                         weights.append(int((y != ignore).sum()))
+                        if batch_index == 1:
+                            print("First batch: CPU metrics (including Boundary IoU)", flush=True)
                         update_metrics(metrics, logits, y, batch["sizes"])
                     if replay_samples:
                         rb = collate(replay_samples, ignore)
@@ -216,10 +228,14 @@ def train(cfg, splits, resume=None):
                             weights.append(int((ry != ignore).sum()))
                             update_metrics(metrics, rlogits, ry, rb["sizes"])
                     if not terms:
+                        if batch_index == 1 or batch_index % 50 == 0:
+                            print(f"Train batch {batch_index}/{len(loader)}: no supervised pixels; skipped", flush=True)
                         continue
                     loss = sum(v * w for v, w in zip(terms, weights)) / sum(weights)
                 if not torch.isfinite(loss):
                     raise FloatingPointError("Non-finite training loss")
+                if batch_index == 1:
+                    print("First batch: backward and optimizer step", flush=True)
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], cfg["training"]["grad_clip"])
@@ -228,6 +244,9 @@ def train(cfg, splits, resume=None):
                 weighted_loss += float(loss.detach()) * sum(weights)
                 count += sum(weights)
                 steps += 1
+                if batch_index == 1 or batch_index % 50 == 0 or batch_index == len(loader):
+                    elapsed = time.perf_counter() - began
+                    print(f"Train batch {batch_index}/{len(loader)}: loss={float(loss.detach()):.4f}, elapsed={elapsed:.1f}s, average={elapsed / batch_index:.2f}s/batch", flush=True)
             if not steps:
                 raise ValueError(f"Stage {stage['name']} has no supervised training pixels")
             train_result = metrics.compute()
