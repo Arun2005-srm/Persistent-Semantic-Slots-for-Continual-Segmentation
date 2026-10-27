@@ -62,6 +62,7 @@ continual:
   replay: {enabled: false, budget_bytes: 67108864, batch_size: 2}
 metrics:
   boundary_ratio: 0.02
+  train_boundary: true # Set false to skip training-only Boundary IoU; validation/test keep it.
 reporting:
   num_predictions: 8
   export_masks: true # During test: all predictions, original resolution, training IDs.

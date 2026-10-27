@@ -173,6 +173,8 @@ The fixed descriptor projection and frozen encoder define stable memory coordina
 
 ## Metrics and outputs
 
+For faster training, use `--set metrics.train_boundary=false` to omit the CPU Boundary IoU calculation during training only. Training accuracy, confusion matrix, IoU and Dice still cover every batch; training Boundary IoU is reported as unavailable (`N/A` / JSON `null`). Validation and test retain full Boundary IoU. This changes reporting, not the loss, model, image resolution or sampling. The default remains `true`. Batch logs include recent seconds/batch, cumulative CPU metric time (excluding device transfer), and cumulative loader wait; first-batch time includes worker startup. Compare later batches when measuring throughput. Changing this setting requires a new run under the existing strict resume rules.
+
 Each epoch prints train accuracy/loss, validation accuracy/loss, validation mIoU, aggregate IoU, Boundary IoU and Dice, followed by **both train and validation per-class IoU/F1/Boundary IoU** tables. All aggregate train metrics are also saved. Training metrics include replay when enabled and are measured online before each optimizer update. Accuracy means valid-pixel accuracy, not mean class accuracy.
 
 - Confusion counts are accumulated across the whole split before computing metrics.

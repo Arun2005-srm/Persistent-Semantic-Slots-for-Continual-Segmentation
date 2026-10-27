@@ -46,6 +46,8 @@ def validate(cfg):
             raise ValueError(f"Invalid RGB mapping target {target}")
     if cfg["metrics"]["boundary_ratio"] <= 0:
         raise ValueError("boundary_ratio must be positive")
+    if type(cfg["metrics"].get("train_boundary", True)) is not bool:
+        raise ValueError("metrics.train_boundary must be a boolean")
     loss = cfg["training"]["loss"]
     if not loss["cross_entropy"] and not loss["dice"]:
         raise ValueError("At least one loss must be enabled")

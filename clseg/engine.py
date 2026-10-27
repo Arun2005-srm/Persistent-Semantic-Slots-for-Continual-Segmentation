@@ -61,8 +61,10 @@ def dataset_for(cfg, splits, stage, split):
 def update_metrics(metrics, logits, labels, sizes):
     pred = logits.detach().argmax(1).cpu().numpy()
     truth = labels.detach().cpu().numpy()
+    began = time.perf_counter()
     for p, y, (h, w) in zip(pred, truth, sizes):
         metrics.update(p[:h, :w], y[:h, :w])
+    metrics.cpu_seconds = getattr(metrics, "cpu_seconds", 0.) + time.perf_counter() - began
 
 
 @torch.no_grad()
@@ -197,11 +199,16 @@ def train(cfg, splits, resume=None):
         for epoch in range(start, epochs):
             began = time.perf_counter()
             model.train()
-            metrics = SegMetrics(len(classes), ignore, cfg["metrics"]["boundary_ratio"])
+            metrics = SegMetrics(len(classes), ignore, cfg["metrics"]["boundary_ratio"],
+                                 compute_boundary=cfg["metrics"].get("train_boundary", True))
             weighted_loss, count, steps = 0., 0, 0
             loader = loader_for(train_set, cfg, shuffle=True, epoch_seed=cfg["seed"] + stage_index * 100000 + epoch)
             print(f"[{stage['name']}] epoch {epoch + 1}/{epochs}: {len(loader)} batches, device={device}, workers={cfg['loader']['num_workers']}; waiting for first batch", flush=True)
+            print(f"Training Boundary IoU: {'enabled' if metrics.compute_boundary else 'disabled (reported N/A); validation remains enabled'}", flush=True)
+            last_report, last_batch, load_seconds = began, 0, 0.
+            batch_end = began
             for batch_index, batch in enumerate(loader, 1):
+                load_seconds += time.perf_counter() - batch_end
                 if batch_index == 1:
                     print("First batch loaded; transferring to device", flush=True)
                 x, y = batch["image"].to(device), batch["mask"].to(device)
@@ -217,7 +224,7 @@ def train(cfg, splits, resume=None):
                         terms.append(loss)
                         weights.append(int((y != ignore).sum()))
                         if batch_index == 1:
-                            print("First batch: CPU metrics (including Boundary IoU)", flush=True)
+                            print("First batch: CPU metrics", flush=True)
                         update_metrics(metrics, logits, y, batch["sizes"])
                     if replay_samples:
                         rb = collate(replay_samples, ignore)
@@ -231,6 +238,7 @@ def train(cfg, splits, resume=None):
                     if not terms:
                         if batch_index == 1 or batch_index % 50 == 0:
                             print(f"Train batch {batch_index}/{len(loader)}: no supervised pixels; skipped", flush=True)
+                        batch_end = time.perf_counter()
                         continue
                     loss = sum(v * w for v, w in zip(terms, weights)) / sum(weights)
                 if not torch.isfinite(loss):
@@ -245,9 +253,12 @@ def train(cfg, splits, resume=None):
                 weighted_loss += float(loss.detach()) * sum(weights)
                 count += sum(weights)
                 steps += 1
+                batch_end = time.perf_counter()
                 if batch_index == 1 or batch_index % 50 == 0 or batch_index == len(loader):
                     elapsed = time.perf_counter() - began
-                    print(f"Train batch {batch_index}/{len(loader)}: loss={float(loss.detach()):.4f}, elapsed={elapsed:.1f}s, average={elapsed / batch_index:.2f}s/batch", flush=True)
+                    recent = (batch_end - last_report) / (batch_index - last_batch)
+                    print(f"Train batch {batch_index}/{len(loader)}: loss={float(loss.detach()):.4f}, elapsed={elapsed:.1f}s, average={elapsed / batch_index:.2f}s/batch, recent={recent:.2f}s/batch, CPU metrics total={getattr(metrics, 'cpu_seconds', 0.):.1f}s, data wait total={load_seconds:.1f}s", flush=True)
+                    last_report, last_batch = batch_end, batch_index
             if not steps:
                 raise ValueError(f"Stage {stage['name']} has no supervised training pixels")
             train_result = metrics.compute()

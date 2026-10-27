@@ -15,8 +15,9 @@ def mean_defined(a):
 
 
 class SegMetrics:
-    def __init__(self, classes, ignore=255, boundary_ratio=.02, eval_classes=None):
+    def __init__(self, classes, ignore=255, boundary_ratio=.02, eval_classes=None, compute_boundary=True):
         self.c, self.ignore, self.ratio = classes, ignore, boundary_ratio
+        self.compute_boundary = compute_boundary
         self.indices = list(range(classes)) if eval_classes is None else eval_classes
         self.cm = np.zeros((classes, classes), dtype=np.int64)
         self.bi = np.zeros(classes, dtype=np.int64)
@@ -31,6 +32,8 @@ class SegMetrics:
             if not valid.any():
                 continue
             self.cm += np.bincount(self.c * truth[valid] + pred[valid], minlength=self.c ** 2).reshape(self.c, self.c)
+            if not self.compute_boundary:
+                continue
             radius = max(1, round(self.ratio * np.hypot(*truth.shape)))
             # Remove an ignore-neighbourhood so artificial void borders are not scored.
             safe = binary_erosion(valid, structure=np.ones((3, 3)), iterations=radius, border_value=1)
