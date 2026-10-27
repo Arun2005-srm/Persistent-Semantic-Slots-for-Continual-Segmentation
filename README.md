@@ -29,6 +29,34 @@ python -m pytest -q tests
 
 Resume with the same configuration (including command-line overrides); only `device` and `output_dir` can change. Runs refuse to overwrite an existing training checkpoint without `--resume`. Only load trusted locally produced checkpoints: training checkpoints contain optimizer and Python RNG state and use PyTorch's full checkpoint format.
 
+## Berkeley DeepDrive (BDD100K)
+
+Use `configs/bdd100k.yaml` for the extracted segmentation dataset layout below (including the existing `bekerly` folder spelling):
+
+```text
+bekerly/
+  10k/{train,val,test}/*.jpg
+  labels/{train,val}/*_train_id.png
+  color_labels/{train,val}/
+```
+
+Set `dataset.root` in that YAML to the **absolute server path** of `city_datasets/cl_datasets/bekerly`, the folder containing `10k/` and `labels/`. The screenshot's workspace name does not establish its absolute path. The ZIP archives do not need to be loaded after extraction.
+
+The configuration expects `10k/train/example.jpg` paired with `labels/train/example_train_id.png` (likewise for validation). Check an actual filename: if your masks are named `example.png`, change both mask templates to `labels/train/{stem}.png` and `labels/val/{stem}.png`. Masks must contain the 19 training IDs `0..18` and ignore value `255`. Use the integer masks in `labels/`, not the rendered `color_labels/` images, and do not reuse Cityscapes' raw-ID mapping. See the [official BDD100K format documentation](https://github.com/bdd100k/bdd100k/blob/master/doc/source/format.rst).
+
+After setting the root:
+
+```bash
+python -m clseg validate --config configs/bdd100k.yaml
+python -m clseg eda --config configs/bdd100k.yaml
+python -m clseg train --config configs/bdd100k.yaml
+python -m clseg test --config configs/bdd100k.yaml --checkpoint runs/bdd100k/last.pt --split val
+# Export predictions for the unlabelled test images:
+python -m clseg test --config configs/bdd100k.yaml --checkpoint runs/bdd100k/last.pt --split test
+```
+
+`validate` checks configuration only; EDA checks actual image/mask pairs and mask values. Training settings and transforms inherit from `base.yaml`. As with Cityscapes, define `continual.stages` explicitly for a continual experiment; the default is single-stage training.
+
 ## Dataset configuration
 
 Create a YAML file extending `base.yaml`; standard paired semantic-mask datasets need no dataset-specific Python class. Configure:
